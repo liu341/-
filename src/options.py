@@ -11,8 +11,16 @@ def args_parser():
     parser.add_argument('--local_bs',type=int,default=50,help='本地批量大小 B')
     parser.add_argument('--lr',type=float,default=0.01,help='学习率')
     parser.add_argument('--momentum',type=float,default=0.5,help='SGD 动量')
+    # FedHq
+    parser.add_argument('--weight_decay',type=float,default=0.0005,help='权重衰减')
+    parser.add_argument('--average_scheme',type=str,default='FedHQ',help='选择平均方案',choices=['FedAvg','Proportional','FedHQ'])
+    parser.add_argument('--quant_bits',type=int,default=8,help='记录当前量化位')
+    parser.add_argument('--bit_4_ratio',type=float,default=0.6,help='4位客户端的比例')
+    parser.add_argument('--bit_8_ratio',type=float,default=0.4,help='6位客户端的比例')
+    parser.add_argument('--quant_type',type=str,default='stochastic',metavar='S',help='四舍五入法，随机或接近',choices=['stochastic','nearest'])
 
-    #模型参数
+
+    # 模型参数
     parser.add_argument('--model',type=str,default='mlp',help='模型名称')
     parser.add_argument('--kernel_num',type=int,default=9,help='内核数量')
     parser.add_argument('--kernel_sizes',type=str,default='3,4,5',help='卷积大小')
@@ -31,5 +39,7 @@ def args_parser():
     parser.add_argument('--stopping_round',type=int,default=10,help='提前停止的轮次')
     parser.add_argument('--verbose',type=int,default=1,help='日志详细信息')
     parser.add_argument('--seed',type=int,default=1,help='随机种子')
+
+    parser.add_argument('--paper',type=str,default='other',choices=['other','FedHQ'])
     args = parser.parse_args()
     return args
