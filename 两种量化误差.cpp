@@ -7,6 +7,13 @@ const float Mean = 500.0;
 const float StdDev = 43232.0f;
 float P = -1; // 此处若设置 P 为 -1 则按 1/error 加权
 
+int Pow(int x,int y){
+	int ans = 1;
+	for(int i=0;i<y;i++){
+		ans *= x;
+	}
+	return ans;
+}
 
 
 vector<float> Get_Data(float &Min_x,float &Max_x,map<float,int> &data_num, map<float,float> &data_f,float mean = 0.0f, float stddev = 1.0f) {
@@ -31,30 +38,40 @@ vector<float> Get_Data(float &Min_x,float &Max_x,map<float,int> &data_num, map<f
 	return data;
 }
 
-float Cacl_Relative_Squ_Quant(vector<float> data,vector<int> A) {
+float Cacl_Relative_Squ_Quant(vector<float> data,vector<int> A, bool point = false, float p_x = 0.0) {
 	float RSQE = 0; // 相对量化误差
-	for(auto x : data) {
-		int A_R_index = lower_bound(A.begin(),A.end(),x) - A.begin(); // 找到第一个大于等于 x 的边界  即为右边界Ai，
+	if(point == false) {
+		for(auto x : data) {
+			int A_R_index = lower_bound(A.begin(),A.end(),x) - A.begin(); // 找到第一个大于等于 x 的边界  即为右边界Ai，
+			if(A_R_index == 0) A_R_index = 1; // 防止越界
+			if(A_R_index == A.size()) A_R_index = A.size()-1; // 防止越界
+			float e = ( -1 + (1.0*(A[A_R_index] + A[A_R_index-1])) / x + ((1.0)*(A[A_R_index-1] * A[A_R_index])) / (x * x) );
+			RSQE += e;
+		}
+		cout<<"在当前量化边界下，data的相对平方量化误差为RSQE："<< RSQE <<endl;
+		return RSQE;
+	} else {
+		int A_R_index = lower_bound(A.begin(),A.end(),p_x) - A.begin(); // 找到第一个大于等于 x 的边界  即为右边界Ai，
 		if(A_R_index == 0) A_R_index = 1; // 防止越界
-		if(A_R_index == A.size()) A_R_index = A.size()-1; // 防止越界
-		float e = ( -1 + (1.0*(A[A_R_index] + A[A_R_index-1])) / x + ((1.0)*(A[A_R_index-1] * A[A_R_index])) / (x * x) );
-		RSQE += e;
+			if(A_R_index == A.size()) A_R_index = A.size()-1; // 防止越界
+		float e = ( -1 + (1.0*(A[A_R_index] + A[A_R_index-1])) / p_x + ((1.0)*(A[A_R_index-1] * A[A_R_index])) / (p_x * p_x) );
+		return e;
 	}
-	cout<<"在当前量化边界下，data的相对平方量化误差为RSQE："<< RSQE <<endl;
-	return RSQE;
+	
 }
 
-float Cacl_Absolute_Squ_Quant(vector<float> data, vector<int> A, bool point = false, float p_x = 0.0) {
+float Cacl_Absolute_Squ_Quant(vector<float> data, vector<int> A, bool point = false, float p_x = 0.0,bool flag = false) {
 	float SQE = 0; // 绝对量化误差
 	if(point == false) {
 		for(auto x : data) {
 			int A_R_index = lower_bound(A.begin(),A.end(),x) - A.begin(); // 找到第一个大于等于 x 的边界  即为右边界Ai，
 			if(A_R_index == 0) A_R_index = 1; // 防止越界
 			if(A_R_index == A.size()) A_R_index = A.size()-1; // 防止越界
+			//cout<<A.size()<<' '<< A_R_index <<endl;
 			float e = -1 * (x * x) + (A[A_R_index - 1] + A[A_R_index]) * x - (A[A_R_index-1] * A[A_R_index]) ;
 			SQE += e;
 		}
-		cout<<"在当前量化边界下，data的绝对平方量化误差为SQE："<< SQE <<endl;
+		if(!flag) cout<<"在当前量化边界下，data的绝对平方量化误差为SQE："<< SQE <<endl;
 		return SQE;
 	} else {
 		int A_R_index = lower_bound(A.begin(),A.end(),p_x) - A.begin(); // 找到第一个大于等于 x 的边界  即为右边界Ai，
@@ -187,6 +204,87 @@ vector<int> Get_Quant_Bound_Weight(vector<int> A,vector<float>data,map<float,flo
 	return A;
 }
 
+int Cacl_Middle_Value(vector<int> A,vector<float>data,map<float,float> data_f,priority_queue<int ,vector<int>, greater<int>> p,int l,int r){
+	//cout<<l<<" "<<r<<endl;
+	int mid = ( l + r ) / 2;
+	int Vl = A[l],Vr = A[r];
+	float Vmid1,Vmid2;
+	int A_mid1,A_mid2;
+	while (Vl < Vr) {
+		//cout<<Vl<<" "<<Vr<<endl;
+		priority_queue<int ,vector<int>, greater<int>> L_P = p,R_P = p; // 记录 传入的 下标列表 
+        // 划分为三个部分
+        // 分两次计算，先计算mid1 产生的量化误差，在计算mid2 产生的量化误差 
+        vector<int> L_A = A;
+        A_mid1 = Vl + (Vr - Vl) / 3; // mid1 的 值 
+        L_A[mid] = A_mid1;
+        L_P.push(mid); // 放入下标 
+        
+        vector<int> L_Bound;
+        while(!L_P.empty()){
+			L_Bound.push_back(L_A[L_P.top()]);
+			L_P.pop();
+		}
+		
+        Vmid1 = Cacl_Absolute_Squ_Quant(data,L_Bound,false,0.0,true);
+        
+        
+        vector<int> R_A = A;
+        A_mid2 = Vr - (Vr - Vl) / 3;
+        R_A[mid] = A_mid2;
+        R_P.push(mid);
+        
+        vector<int> R_Bound;
+        while(!R_P.empty()){
+			R_Bound.push_back(R_A[R_P.top()]);
+			R_P.pop();
+		}
+		
+        Vmid2 = Cacl_Absolute_Squ_Quant(data,R_Bound,false,0.0,true);
+        
+        if (Vmid1 < Vmid2) {
+            // 在左侧部分
+            Vr = A_mid1-1;
+        } else if (Vmid1 > Vmid2) {
+            // 在右侧部分
+            Vl = A_mid2+1;
+        } else {
+            // 在中间部分
+            Vl = A_mid1+1;
+            Vr = A_mid2-1;
+        }
+        if(Vl + 1 == Vr) break;
+    }
+    if(Vmid1 <= Vmid2){
+    	return A_mid1;
+	}else{
+		return A_mid2;
+	}
+}
+
+void get_Quant_Bound_Middle(vector<int>& A,vector<float>data,map<float,float> data_f,priority_queue<int ,vector<int>, greater<int> > p,int l,int r) {
+	if(l >= r || l == 0 && r != Pow(2,Bits)-1  || l != 0 && r == Pow(2,Bits)-1) return;
+	int mid = (l + r) / 2;
+	A[mid] = Cacl_Middle_Value(A,data,data_f,p,l,r); // 计算量化误差需要使用新的边界 
+	p.push(mid);
+	get_Quant_Bound_Middle(A,data,data_f,p,l, mid);
+	get_Quant_Bound_Middle(A,data,data_f,p,mid, r);
+}
+
+vector<int> Get_Quant_Bound_Middle(vector<int> A,vector<float>data,map<float,float> data_f) {
+	// 大致思路为： 根据左右边界 枚举到中间位置，使得找到最合理的中间节点，
+	// 此时，将被划分为左右两个问题，重复上述操作
+	int l = 0,r = Pow(2,Bits)-1;
+	vector<int> _A = A;
+	priority_queue<int ,vector<int>, greater<int>> p;
+	p.push(l);
+	p.push(r);
+	 
+	get_Quant_Bound_Middle(_A,data,data_f,p,l,r);
+	return _A;
+}
+
+
 void Print_Quantization(vector<int> ve) {
 	cout<<ve.size()<<endl;
 	for(int i=1; i<=ve.size(); i++) {
@@ -226,7 +324,7 @@ int main() {
 	map<float,int> data_num; // X 出现的频次
 	map<float,float> data_f; // X 出现的频率
 	vector<float> data = Get_Data(Min_x,Max_x,data_num,data_f,Mean,StdDev);
-	Save_Data("data.txt",data);
+	//Save_Data("data.txt",data);
 	cout<<"\n数据生成完毕。\n"<<endl;
 	
 	vector<int> A;
@@ -235,7 +333,7 @@ int main() {
 		A.push_back(Min_x + (i * (Max_x - Min_x)) / (pow(2,Bits) - 1) );
 	}
 	A.push_back(Max_x);
-	Save_Data("origin_bound.txt",A);
+	//Save_Data("origin_bound.txt",A);
 	cout<<"\n初始量化边界以确定。\n"<<endl;
 	
 	//Print_Quantization(A);
@@ -243,12 +341,16 @@ int main() {
 	float ORSQE = Cacl_Relative_Squ_Quant(data,A); // 相对
 	float OWSQE = Cacl_Weight_Squ_Quant(data,A); // 加权
 	
+	
 	vector<int> A_Relative = Get_Quant_Bound_Relative(A,data,data_f);
 	vector<int> A_Absolute = Get_Quant_Bound_Absolute(A,data,data_f);
 	vector<int> A_Weight = Get_Quant_Bound_Weight(A,data,data_f);
-	Save_Data("Absolute_bound.txt",A_Absolute);
-	Save_Data("Relative_bound.txt",A_Relative);
-	Save_Data("Weight_bound.txt",A_Weight);
+	vector<int> A_Middle = Get_Quant_Bound_Middle(A,data,data_f);
+	
+	//Save_Data("Absolute_bound.txt",A_Absolute);
+	//Save_Data("Relative_bound.txt",A_Relative);
+	//Save_Data("Weight_bound.txt",A_Weight);
+	//Save_Data("Middle_bound.txt",A_Middle);
 	cout<<"\n量化边界已修正。\n"<<endl;
 
 	//Print_Quantization(A_Absolute);
@@ -261,6 +363,9 @@ int main() {
 
 	float NWSQE = Cacl_Weight_Squ_Quant(data,A_Weight);   // 加权
 	cout<<"加权量化：相比于初始量化边界，误差减小了：" << (OWSQE - NWSQE) / OWSQE * 100 <<"%\n" <<endl;
+	
+	float NMSQE = Cacl_Absolute_Squ_Quant(data,A_Weight);   // 根据中值获取量化边界  记录相对量化误差。 
+	cout<<"中值量化：相比于初始量化边界，误差减小了：" << (OASQE - NMSQE) / OASQE * 100 <<"%\n" <<endl;
 
 	return 0;
 }
